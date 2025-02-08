@@ -18,9 +18,10 @@ if (!mongoURI) {
     process.exit(1);
 }
 mongoose.connect(mongoURI)
-    .then(() => console.log('MongoDB Connected'))
-    .catch(err => console.log("MongoDB Connection Error:", err));
+    .then(() => console.log('✅ MongoDB Connected'))
+    .catch(err => console.log("❌ MongoDB Connection Error:", err));
 
+// Models
 const Product = mongoose.model('Product', new mongoose.Schema({
     name: { type: String, required: true },
     price: { type: Number, required: true },
@@ -43,8 +44,9 @@ const Order = mongoose.model('Order', new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 }));
 
+// Middleware
 const authenticate = (req, res, next) => {
-    const token = req.cookies.token;
+    const token = req.cookies.token || req.header("Authorization")?.split(" ")[1];
     if (!token) return res.status(401).json({ message: 'Access Denied. No Token Provided.' });
 
     try {
@@ -63,8 +65,10 @@ const isAdmin = (req, res, next) => {
     next();
 };
 
-app.get('/', (req, res) => res.send('E-commerce API is running'));
+// Routes
+app.get('/', (req, res) => res.send('E-commerce API is running 🚀'));
 
+// 🔹 User Authentication
 app.post('/register', async (req, res) => {
     try {
         const { name, email, password } = req.body;
@@ -108,14 +112,35 @@ app.post('/logout', (req, res) => {
     res.json({ message: 'Logged out successfully' });
 });
 
-app.post('/products', authenticate, isAdmin, async (req, res) => {
+// 🔹 Users Routes (Admin Only)
+app.get('/users', authenticate, isAdmin, async (req, res) => {
+    const users = await User.find();
+    res.json(users);
+});
+
+app.get('/users/:id', authenticate, isAdmin, async (req, res) => {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json(user);
+});
+
+app.put('/users/:id/role', authenticate, isAdmin, async (req, res) => {
     try {
-        const product = new Product(req.body);
-        await product.save();
-        res.status(201).json(product);
+        const { role } = req.body;
+        if (!['user', 'admin'].includes(role)) return res.status(400).json({ message: 'Invalid role' });
+
+        const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true });
+        res.json(user);
     } catch (err) {
-        res.status(400).json({ message: 'Error adding product', error: err.message });
+        res.status(400).json({ message: 'Error updating role', error: err.message });
     }
+});
+
+// 🔹 Product Routes
+app.post('/products', authenticate, isAdmin, async (req, res) => {
+    const product = new Product(req.body);
+    await product.save();
+    res.status(201).json(product);
 });
 
 app.get('/products', async (req, res) => {
@@ -124,36 +149,23 @@ app.get('/products', async (req, res) => {
 });
 
 app.put('/products/:id', authenticate, isAdmin, async (req, res) => {
-    try {
-        const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
-        res.json(product);
-    } catch (err) {
-        res.status(400).json({ message: 'Error updating product', error: err.message });
-    }
+    const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(product);
 });
 
 app.delete('/products/:id', authenticate, isAdmin, async (req, res) => {
-    try {
-        await Product.findByIdAndDelete(req.params.id);
-        res.json({ message: 'Product deleted' });
-    } catch (err) {
-        res.status(400).json({ message: 'Error deleting product', error: err.message });
-    }
+    await Product.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Product deleted' });
 });
 
+// 🔹 Orders Routes
 app.post('/orders', authenticate, async (req, res) => {
-    try {
-        const { productIds } = req.body;
-        if (!productIds || productIds.length === 0) {
-            return res.status(400).json({ message: 'At least one product is required to place an order' });
-        }
+    const { productIds } = req.body;
+    if (!productIds || productIds.length === 0) return res.status(400).json({ message: 'At least one product is required' });
 
-        const order = new Order({ userId: req.user.id, productIds });
-        await order.save();
-        res.status(201).json(order);
-    } catch (err) {
-        res.status(400).json({ message: 'Error creating order', error: err.message });
-    }
+    const order = new Order({ userId: req.user.id, productIds });
+    await order.save();
+    res.status(201).json(order);
 });
 
 app.get('/orders', authenticate, async (req, res) => {
@@ -161,5 +173,15 @@ app.get('/orders', authenticate, async (req, res) => {
     res.json(orders);
 });
 
+app.get('/orders/all', authenticate, isAdmin, async (req, res) => {
+    const orders = await Order.find().populate('productIds userId');
+    res.json(orders);
+});
+
+app.put('/orders/:id', authenticate, isAdmin, async (req, res) => {
+    const order = await Order.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(order);
+});
+
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
